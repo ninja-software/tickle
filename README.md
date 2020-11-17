@@ -5,7 +5,7 @@ Golang ticker based task runner.
 ## How to use
 
 ```go
-main.go
+// main.go
 
 // init new tickle
 ss := tickle.New(

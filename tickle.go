@@ -15,16 +15,13 @@ type Tickle struct {
 	timeInterval time.Duration // what interval it will trigger
 	ticker       *time.Ticker  // internal ticker
 
-	funcTask    Task // task function to be executed
-	funcLogger  Task // function for logging (optional)
-	funcRecover Task // function to run when error occured (optional)
+	funcTask  Task  // task function to be executed
+	funcClean Clean // function to run when error occured (optional)
 
 	StartZero    bool // start the task immediately when tickle starts
 	Count        int  // number of times this been triggered
 	CountFail    int  // number of failed trigger
 	CountSuccess int  // number of successful trigger
-
-	ErrorDo Task // task to be execute when error
 
 	LastError *error    // what is the task's last error
 	LastTick  time.Time // when is the task last ran
@@ -37,9 +34,12 @@ type Tickle struct {
 	StopMaxError    int // stops when maximum number of consecutive error reached
 }
 
-// Task is a basic function to be executed by the tickle. User must supply.
+// Task uses user supplied function to run on interval
 // It will returns the number of action/change/touch/created/update/delete performed and error status
 type Task func() (int, error)
+
+// Clean uses user supplied function to run clean from error
+type Clean func(interface{}, error)
 
 // Start will begin the tickle
 func (sc *Tickle) Start() {
@@ -123,12 +123,16 @@ func (sc *Tickle) TaskRun() {
 		log.Infof("Tickle task exit (%s)\n", sc.Name)
 	}()
 
-	_, err := sc.funcTask()
+	dat, err := sc.funcTask()
 	if err != nil {
 		log.Errorf("Tickle task failed (%s)\n", sc.Name)
 		terror.Echo(err)
 		sc.LastError = &err
 		sc.CountFail++
+
+		if sc.funcClean != nil {
+			sc.funcClean(dat, err)
+		}
 	} else {
 		sc.CountSuccess++
 		sc.LastError = nil
@@ -212,12 +216,12 @@ func New(
 	timeSecond int,
 	startZero bool,
 	funcTask Task,
-	funcLogger Task, // optional, can use nil
-	funcRecover Task, // optional, can use nil
+	funcClean Clean, // optional, can use nil
 ) *Tickle {
-	if timeSecond < 10 {
-		panic("cannot be less than 10 seconds for interval")
-	}
+	// TODO enable me after test
+	// if timeSecond < 10 {
+	// 	panic("cannot be less than 10 seconds for interval")
+	// }
 	if funcTask == nil {
 		panic("task must be given")
 	}
@@ -233,12 +237,8 @@ func New(
 		StopMaxInterval: 2147483647, // ~68 years if triggger every second
 	}
 
-	if funcLogger != nil {
-		tk.funcLogger = funcLogger
-	}
-
-	if funcRecover != nil {
-		tk.funcRecover = funcRecover
+	if funcClean != nil {
+		tk.funcClean = funcClean
 	}
 
 	return tk
