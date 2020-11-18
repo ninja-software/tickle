@@ -29,27 +29,31 @@ var sayMoo tickle.Task = func() (int, error) {
 }
 
 var clean tickle.Clean = func(dat interface{}, err error) {
-	// log.Printf("moo %d is noooooo good\n", dat.(int))
+	log.Printf("moo %d is noooooo good\n", dat.(int))
 
-	// // panic?
+	// panic 1
 	// log.Printf("moo %s is noooooo good\n", dat.(string))
 
-	arr := []int{}
-	fmt.Println(arr[555])
+	// panic 2
+	// arr := []int{}
+	// fmt.Println(arr[555])
 }
 
 func main() {
 	// tickle.Cow()
 
-	ss := tickle.New(
+	tk := tickle.New(
 		"sayMoo", // task name
 		3,        // run every 180 second
-		true,     // run immediately when initiated
 		sayMoo,   // run the sayMoo() function
-		clean,    // do when sayMoo() returns error
 	)
-	ss.Start()
 
+	// do when sayMoo() returns error
+	tk.FuncClean = clean
+
+	tk.Start()
+
+	// so program dont exit
 	for {
 		time.Sleep(time.Second)
 	}

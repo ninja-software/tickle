@@ -11,12 +11,13 @@ import (
 
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
-	Name         string        // name of the scheduled task
-	timeInterval time.Duration // what interval it will trigger
-	ticker       *time.Ticker  // internal ticker
+	Name           string // name of the scheduled task
+	intervalSecond int    // what interval the task will run at
 
-	funcTask  Task  // task function to be executed
-	funcClean Clean // function to run when error occured (optional)
+	ticker *time.Ticker // internal ticker
+
+	FuncTask  Task  // task function to be executed
+	FuncClean Clean // function to run when error occured (optional)
 
 	StartZero    bool // start the task immediately when tickle starts
 	Count        int  // number of times this been triggered
@@ -26,9 +27,11 @@ type Tickle struct {
 	LastError *error    // what is the task's last error
 	LastTick  time.Time // when is the task last ran
 
-	TimeOut   time.Duration // how long the task should wait before give up, does not affect the next task
-	TimeStart time.Time     // when the task should start running
-	TimeStop  time.Time     // when the task should stop running
+	TimeOut time.Duration // how long the task should wait before give up, does not affect the next task
+
+	// time allowed to run in a range (inclusive)   -----[      ]-----    [ = open      ] = close
+	TimeRangeOpen  time.Time // when the task is allowed to run after
+	TimeRangeClose time.Time // when the task is allowed to run before
 
 	StopMaxInterval int // stops when maximum number of interval reached
 	StopMaxError    int // stops when maximum number of consecutive error reached
@@ -43,8 +46,8 @@ type Clean func(interface{}, error)
 
 // Start will begin the tickle
 func (sc *Tickle) Start() {
-	if sc.funcTask == nil {
-		log.Errorf(" Err: Tickle no task registered (%s)\n", sc.Name)
+	if sc.FuncTask == nil {
+		log.Errorf(" Err: Tickle have task registered (%s)\n", sc.Name)
 		return
 	}
 
@@ -55,7 +58,9 @@ func (sc *Tickle) Start() {
 		sc.TaskRun()
 	}
 
-	sc.ticker = time.NewTicker(sc.timeInterval)
+	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
+
+	sc.ticker = time.NewTicker(duration)
 	done := make(chan bool, 1)
 	go func(t *time.Ticker) {
 		for {
@@ -74,11 +79,11 @@ func (sc *Tickle) Start() {
 func (sc *Tickle) TaskRun() {
 	// sanity check
 	// too early
-	if !sc.TimeStart.IsZero() && time.Now().Before(sc.TimeStart) {
+	if !sc.TimeRangeOpen.IsZero() && time.Now().Before(sc.TimeRangeOpen) {
 		return
 	}
 	// too late
-	if !sc.TimeStop.IsZero() && time.Now().After(sc.TimeStop) {
+	if !sc.TimeRangeClose.IsZero() && time.Now().After(sc.TimeRangeClose) {
 		return
 	}
 	// too many
@@ -123,15 +128,25 @@ func (sc *Tickle) TaskRun() {
 		log.Infof("Tickle task exit (%s)\n", sc.Name)
 	}()
 
-	dat, err := sc.funcTask()
+	if sc.FuncTask == nil {
+		err := fmt.Errorf("Tickle func is nil")
+		log.Errorf("Tickle task failed (%s)\n", sc.Name)
+		terror.Echo(err)
+		sc.LastError = &err
+		sc.CountFail++
+		sc.Count++
+		return
+	}
+
+	dat, err := sc.FuncTask()
 	if err != nil {
 		log.Errorf("Tickle task failed (%s)\n", sc.Name)
 		terror.Echo(err)
 		sc.LastError = &err
 		sc.CountFail++
 
-		if sc.funcClean != nil {
-			sc.funcClean(dat, err)
+		if sc.FuncClean != nil {
+			sc.FuncClean(dat, err)
 		}
 	} else {
 		sc.CountSuccess++
@@ -147,7 +162,7 @@ func (sc *Tickle) SetInterval(interval time.Duration) error {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
 	}
 
-	sc.timeInterval = interval
+	sc.intervalSecond = int(interval.Seconds())
 
 	sc.Stop()
 	sc.Start()
@@ -155,14 +170,14 @@ func (sc *Tickle) SetInterval(interval time.Duration) error {
 	return nil
 }
 
-// SetTimeStart change the time that task would run
-func (sc *Tickle) SetTimeStart(y, m, d, h, min, s int) error {
+// SetTimeOpen change the time range that task would run
+func (sc *Tickle) SetTimeOpen(y, m, d, h, min, s int) error {
 	if m < 1 || m > 12 {
 		return terror.New(fmt.Errorf("wrong month number %d", m), "")
 	}
 
 	mth := time.Month(m)
-	sc.TimeStart = time.Date(y, mth, d, h, min, s, 0, time.Local)
+	sc.TimeRangeOpen = time.Date(y, mth, d, h, min, s, 0, time.Local)
 
 	sc.Stop()
 	sc.Start()
@@ -170,14 +185,14 @@ func (sc *Tickle) SetTimeStart(y, m, d, h, min, s int) error {
 	return nil
 }
 
-// SetTimeStop change the time that task would not run
-func (sc *Tickle) SetTimeStop(y, m, d, h, min, s int) error {
+// SetTimeClose change the time range that task would not run
+func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 	if m < 1 || m > 12 {
 		return terror.New(fmt.Errorf("wrong month number %d", m), "")
 	}
 
 	mth := time.Month(m)
-	sc.TimeStop = time.Date(y, mth, d, h, min, s, 0, time.Local)
+	sc.TimeRangeClose = time.Date(y, mth, d, h, min, s, 0, time.Local)
 
 	sc.Stop()
 	sc.Start()
@@ -192,17 +207,6 @@ func (sc *Tickle) CounterReset() {
 	sc.CountSuccess = 0
 }
 
-// SetTask set the function (task) for running when called
-func (sc *Tickle) SetTask(task Task) {
-	sc.funcTask = task
-}
-
-// SetTaskAndStart adds the function (task) and start immediately
-func (sc *Tickle) SetTaskAndStart(task Task) {
-	sc.funcTask = task
-	sc.Start()
-}
-
 // Stop will halt the tickle
 func (sc *Tickle) Stop() {
 	log.Info("Stop tickle")
@@ -210,13 +214,11 @@ func (sc *Tickle) Stop() {
 	sc.ticker.Stop()
 }
 
-// New will return a new tickle
+// New makes creating tickle easily
 func New(
-	taskName string,
-	timeSecond int,
-	startZero bool,
-	funcTask Task,
-	funcClean Clean, // optional, can use nil
+	taskName string, // name of the task to identify, please make it unique
+	timeSecond int, // interval in seconds
+	funcTask Task, //  function for task to execute
 ) *Tickle {
 	// TODO enable me after test
 	// if timeSecond < 10 {
@@ -226,19 +228,11 @@ func New(
 		panic("task must be given")
 	}
 
-	var ti time.Duration
-	ti = time.Second * time.Duration(timeSecond)
-
 	tk := &Tickle{
 		Name:            taskName,
-		funcTask:        funcTask,
-		timeInterval:    ti,
-		StartZero:       startZero,
+		FuncTask:        funcTask,
+		intervalSecond:  timeSecond,
 		StopMaxInterval: 2147483647, // ~68 years if triggger every second
-	}
-
-	if funcClean != nil {
-		tk.funcClean = funcClean
 	}
 
 	return tk
