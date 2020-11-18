@@ -51,12 +51,13 @@ var recovery tickle.Recovery = func(err error) {
 func main() {
 	tk := tickle.New(
 		"sayMoo", // task name
-		3,        // run every 180 second
+		3,        // run every 3 second
 		sayMoo,   // run the sayMoo() function
 	)
 
 	// do when sayMoo() returns error
 	tk.FuncClean = clean
+	// do when sayMoo() panics
 	tk.FuncRecovery = recovery
 	tk.Start()
 

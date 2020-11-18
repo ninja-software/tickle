@@ -24,8 +24,6 @@ type Tickle struct {
 	LastError *error    // what is the task's last error
 	LastTick  time.Time // when is the task last ran
 
-	TimeOut time.Duration // how long the task should wait before give up, does not affect the next task
-
 	// time allowed to run in a range (inclusive)   -----[      ]-----    [ = open      ] = close
 	TimeRangeOpen  time.Time // when the task is allowed to run after
 	TimeRangeClose time.Time // when the task is allowed to run before
