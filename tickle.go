@@ -11,19 +11,15 @@ import (
 
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
-	Name           string // name of the scheduled task
-	intervalSecond int    // what interval the task will run at
-
-	ticker *time.Ticker // internal ticker
+	Name string // name of the scheduled task
 
 	FuncTask     Task     // function to be executed on regular interval
 	FuncClean    Clean    // function to run when error occured (optional)
 	FuncRecovery Recovery // function to run when panic occured (optional)
 
-	StartZero    bool // start the task immediately when tickle starts
-	Count        int  // number of times this been triggered
-	CountFail    int  // number of failed trigger
-	CountSuccess int  // number of successful trigger
+	Count        int // number of times this been triggered
+	CountFail    int // number of failed trigger
+	CountSuccess int // number of successful trigger
 
 	LastError *error    // what is the task's last error
 	LastTick  time.Time // when is the task last ran
@@ -36,6 +32,11 @@ type Tickle struct {
 
 	StopMaxInterval int // stops when maximum number of interval reached
 	StopMaxError    int // stops when maximum number of consecutive error reached
+
+	// internal
+	intervalSecond int          // how many seconds each interval the task will run at
+	ticker         *time.Ticker // internal ticker
+
 }
 
 // Task uses user supplied function to run on interval
@@ -56,11 +57,6 @@ func (sc *Tickle) Start() {
 	}
 
 	log.Infof("Start tickle (%s)\n", sc.Name)
-
-	// run first time, then ticker next
-	if sc.StartZero {
-		sc.TaskRun()
-	}
 
 	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
 
@@ -99,8 +95,6 @@ func (sc *Tickle) TaskRun() {
 		return
 	}
 
-	// clear start zero
-	sc.StartZero = false
 	// remember
 	sc.LastTick = time.Now()
 
