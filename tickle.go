@@ -16,8 +16,9 @@ type Tickle struct {
 
 	ticker *time.Ticker // internal ticker
 
-	FuncTask  Task  // task function to be executed
-	FuncClean Clean // function to run when error occured (optional)
+	FuncTask     Task     // function to be executed on regular interval
+	FuncClean    Clean    // function to run when error occured (optional)
+	FuncRecovery Recovery // function to run when panic occured (optional)
 
 	StartZero    bool // start the task immediately when tickle starts
 	Count        int  // number of times this been triggered
@@ -43,6 +44,9 @@ type Task func() (int, error)
 
 // Clean uses user supplied function to run clean from error
 type Clean func(interface{}, error)
+
+// Recovery uses user supplied function to run when panic occured
+type Recovery func(error)
 
 // Start will begin the tickle
 func (sc *Tickle) Start() {
@@ -100,6 +104,25 @@ func (sc *Tickle) TaskRun() {
 	// remember
 	sc.LastTick = time.Now()
 
+	// recover from panic from FuncRecovery
+	defer func() {
+		if rec := recover(); rec != nil {
+			message := "Tickle task panicked-panicked (" + sc.Name + ")"
+			log.Errorln(message)
+			strStack := string(debug.Stack())
+
+			var err error
+			switch v := rec.(type) {
+			case error:
+				err = v
+			default:
+				err = fmt.Errorf(message)
+			}
+			sc.LastError = &err
+
+			log.Errorln("Tickle panic-panic recovered ("+sc.Name+"): ", err, "\n", strStack)
+		}
+	}()
 	// recover from panic
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -117,10 +140,11 @@ func (sc *Tickle) TaskRun() {
 			sc.LastError = &err
 
 			log.Errorln("Tickle panic recovered ("+sc.Name+"): ", err, "\n", strStack)
-		}
 
-		// ctx := context.Background()
-		// helpers.SentrySend(ctx, nil, nil, err, strStack)
+			if sc.FuncRecovery != nil {
+				sc.FuncRecovery(err)
+			}
+		}
 	}()
 
 	log.Infof("Tickle task run (%s)\n", sc.Name)
