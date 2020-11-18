@@ -33,8 +33,9 @@ type Tickle struct {
 
 	// internal
 	intervalSecond int          // how many seconds each interval the task will run at
+	alignAt        time.Time    // tells the ticker align time in relation to (can be past). use case, starts at 1am then repeat every 5 minutes 1:00/1:05/1:10, instead of 1:02/1:07/1:13
 	ticker         *time.Ticker // internal ticker
-
+	timerTicker    *time.Timer  // timer that starts the ticker above
 }
 
 // Task uses user supplied function to run on interval
@@ -49,11 +50,6 @@ type Recovery func(error)
 
 // Start will begin the tickle
 func (sc *Tickle) Start() {
-	if sc.FuncTask == nil {
-		log.Errorf(" Err: Tickle have task registered (%s)\n", sc.Name)
-		return
-	}
-
 	log.Infof("Start tickle (%s)\n", sc.Name)
 
 	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
@@ -182,6 +178,87 @@ func (sc *Tickle) SetInterval(interval time.Duration) error {
 
 	sc.Stop()
 	sc.Start()
+
+	return nil
+}
+
+// SetIntervalAt change the ticker interval and start at specified hour and minute of the day
+func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute int) error {
+	// todo make it 10 again
+	if interval.Seconds() < 1 {
+		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
+	}
+	if startHour < -1 || startHour > 23 {
+		return terror.New(fmt.Errorf("startHour must be range of -1..23"), "")
+	}
+	if startMinute < -1 || startMinute > 59 {
+		return terror.New(fmt.Errorf("startMinute must be range of -1..59"), "")
+	}
+
+	now := time.Now()
+
+	if sc.ticker != nil {
+		sc.Stop()
+	}
+	if sc.timerTicker != nil {
+		sc.timerTicker.Stop()
+	}
+
+	var start time.Duration
+	t := now
+
+	if startHour == -1 && startMinute == -1 {
+		// start next second
+		// leave as is
+		t = t.Add(time.Second)
+
+	} else if startHour == -1 && startMinute > -1 {
+		// start beginning of next hour at matching minute
+		t = t.Truncate(time.Hour)
+		t = t.Add(time.Minute * time.Duration(startMinute))
+
+		// if now is after next start time, make it next hour
+		if now.After(t) {
+			t = t.Add(time.Hour)
+		}
+
+	} else if startHour > -1 && startMinute > -1 {
+		// start beginning of next matching hour at matching minute
+		t = t.Truncate(time.Hour * 24)
+		t = t.Add(time.Hour * time.Duration(startHour))
+		t = t.Add(time.Minute * time.Duration(startMinute))
+
+		// if now is after next start time, make it next day
+		if now.After(t) {
+			t = t.Add(time.Hour * 24)
+		}
+
+	} else if startHour > -1 && startMinute == -1 {
+		// start beginning of next matching hour at 0 minute
+		t = t.Truncate(time.Hour)
+
+		// if now is after next start time, make it next hour
+		if now.After(t) {
+			t = t.Add(time.Hour)
+		}
+
+	} else {
+		// unreachable...
+		// leave as is
+		panic("booooom")
+	}
+
+	sc.intervalSecond = int(interval.Seconds())
+	sc.alignAt = t
+	start = t.Sub(now)
+
+	log.Infof("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, start.String(), interval.String())
+
+	a := time.AfterFunc(start, func() {
+		sc.TaskRun()
+		sc.Start()
+	})
+	sc.timerTicker = a
 
 	return nil
 }

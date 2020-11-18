@@ -40,9 +40,9 @@ var clean tickle.Clean = func(dat interface{}, err error) {
 }
 
 var recovery tickle.Recovery = func(err error) {
-	// panic 3
-	arr := []int{}
-	fmt.Println(arr[999])
+	// // panic 3
+	// arr := []int{}
+	// fmt.Println(arr[999])
 
 	arrow := ">>>>>>>>>>>>>>>>>>>>>>>"
 	fmt.Printf("%s Instruction: keep calm and carry on.\n%s Error: %s\n", arrow, arrow, err.Error())
@@ -51,7 +51,7 @@ var recovery tickle.Recovery = func(err error) {
 func main() {
 	tk := tickle.New(
 		"sayMoo", // task name
-		3,        // run every 3 second
+		10,       // run every 3 second
 		sayMoo,   // run the sayMoo() function
 	)
 
@@ -59,7 +59,12 @@ func main() {
 	tk.FuncClean = clean
 	// do when sayMoo() panics
 	tk.FuncRecovery = recovery
-	tk.Start()
+	// tk.TaskRun()
+	// tk.Start()
+	err := tk.SetIntervalAt(time.Second*3, 18, 30)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// so program dont exit
 	for {
