@@ -61,7 +61,7 @@ func main() {
 	tk.FuncRecovery = recovery
 	// tk.TaskRun()
 	// tk.Start()
-	err := tk.SetIntervalAt(time.Second*3, 18, 30)
+	err := tk.SetIntervalAt(time.Second*3, 17, 42)
 	if err != nil {
 		log.Fatal(err)
 	}
