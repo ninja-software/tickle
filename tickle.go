@@ -245,15 +245,15 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		t = t.Add(time.Minute * time.Duration(startMinute))
 		fmt.Println(4, t)
 
-		// if now is after next start time, make it next day
-		if now.After(t) {
-			t = t.Add(time.Hour * 24)
-			fmt.Println(5, t)
-		}
-
 		// if there is offset, set it
 		if targetTimezoneOffsetMinute != nil {
 			t = t.Add(time.Minute * time.Duration(*targetTimezoneOffsetMinute))
+			fmt.Println(5, t)
+		}
+
+		// if now is after next start time, make it next day
+		if now.After(t) {
+			t = t.Add(time.Hour * 24)
 			fmt.Println(6, t)
 		}
 
