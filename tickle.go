@@ -184,16 +184,14 @@ func (sc *Tickle) SetInterval(interval time.Duration) error {
 
 // SetIntervalAt change the ticker interval and start at specified hour and minute of the day, using local timezone
 func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute int) error {
-	now := time.Now()
+	// _, offsetSecond := time.Now().Zone()
+	loc := time.Local
 
-	offset := now.Sub(time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), now.Second(), now.Nanosecond(), time.UTC))
-	tzOffsetMinute := int(offset.Minutes())
-
-	return sc.SetIntervalAtTimezone(interval, startHour, startMinute, &tzOffsetMinute)
+	return sc.SetIntervalAtTimezone(interval, startHour, startMinute, loc)
 }
 
 // SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes
-func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, targetTimezoneOffsetMinute *int) error {
+func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, loc *time.Location) error {
 	// todo make it 10 again
 	if interval.Seconds() < 1 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
@@ -205,8 +203,6 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		return terror.New(fmt.Errorf("startMinute must be range of -1..59"), "")
 	}
 
-	now := time.Now()
-
 	if sc.ticker != nil {
 		sc.Stop()
 	}
@@ -214,69 +210,61 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		sc.timerTicker.Stop()
 	}
 
-	var start time.Duration
-	t := now
+	now := time.Now()
+
+	// start time, st
+	st := now.UTC()
 
 	if startHour == -1 && startMinute == -1 {
 		fmt.Println("course 1")
-		// start next second
-		// leave as is
-		t = t.Add(time.Second)
+		// start next minute
+		st = st.Truncate(time.Minute)
+
+		// if now is after next start time, make it next minute
+		if now.After(st) {
+			st = st.Add(time.Minute)
+		}
 
 	} else if startHour == -1 && startMinute > -1 {
 		fmt.Println("course 2")
 		// start beginning of next hour at matching minute
-		t = t.Truncate(time.Hour)
-		t = t.Add(time.Minute * time.Duration(startMinute))
+		st = st.Truncate(time.Hour)
+		st = st.Add(time.Minute * time.Duration(startMinute))
 
 		// if now is after next start time, make it next hour
-		if now.After(t) {
-			t = t.Add(time.Hour)
+		if now.After(st) {
+			st = st.Add(time.Hour)
 		}
 
 	} else if startHour > -1 && startMinute > -1 {
 		fmt.Println("course 3")
 		// start beginning of next matching hour at matching minute
-		fmt.Println(1, t)
-		t = t.Truncate(time.Hour * 24)
-		fmt.Println(2, t)
-		t = t.Add(time.Hour * time.Duration(startHour))
-		fmt.Println(3, t)
-		t = t.Add(time.Minute * time.Duration(startMinute))
-		fmt.Println(4, t)
-
-		// if there is offset, set it
-		if targetTimezoneOffsetMinute != nil {
-			t = t.Add(time.Minute * time.Duration(*targetTimezoneOffsetMinute))
-			fmt.Println(5, t)
-		}
+		st = time.Date(st.Year(), st.Month(), st.Day(), startHour, startMinute, 0, 0, loc)
 
 		// if now is after next start time, make it next day
-		if now.After(t) {
-			t = t.Add(time.Hour * 24)
-			fmt.Println(6, t)
+		if now.After(st) {
+			st = st.Add(time.Hour * 24)
+			fmt.Println(21, st)
 		}
 
-	} else if startHour > -1 && startMinute == -1 {
+	} else if startHour > -1 {
 		fmt.Println("course 4")
 		// start beginning of next matching hour at 0 minute
-		t = t.Truncate(time.Hour)
+		st = st.Truncate(time.Hour)
 
 		// if now is after next start time, make it next hour
-		if now.After(t) {
-			t = t.Add(time.Hour)
+		if now.After(st) {
+			st = st.Add(time.Hour)
 		}
 
 	} else {
 		fmt.Println("course 5")
-		// unreachable...
-		// leave as is
 		panic("booooom")
 	}
 
 	sc.intervalSecond = int(interval.Seconds())
-	sc.alignAt = t
-	start = t.Sub(now)
+	sc.alignAt = st
+	start := st.Sub(now)
 
 	log.Infof("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, start.String(), interval.String())
 
