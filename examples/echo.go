@@ -63,12 +63,12 @@ func main() {
 	// tk.Start()
 	// err := tk.SetIntervalAt(time.Second*3, 13, 00)
 
-	per, err := time.LoadLocation("Australia/Perth")
+	loc, err := time.LoadLocation("Australia/Sydney")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = tk.SetIntervalAtTimezone(time.Second*3, 13, -1, per)
+	err = tk.SetIntervalAtTimezone(time.Second*3, 19, 0, loc)
 	if err != nil {
 		log.Fatal(err)
 	}

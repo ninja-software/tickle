@@ -236,9 +236,13 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 			st = st.Add(time.Hour)
 		}
 
-	} else if startHour > -1 && startMinute > -1 {
+	} else if startHour > -1 {
 		fmt.Println("course 3")
 		// start beginning of next matching hour at matching minute
+		// or if startMinute == -1, then minute at 0
+		if startMinute == -1 {
+			startMinute = 0
+		}
 		st = time.Date(st.Year(), st.Month(), st.Day(), startHour, startMinute, 0, 0, loc)
 
 		// if now is after next start time, make it next day
@@ -247,19 +251,10 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 			fmt.Println(21, st)
 		}
 
-	} else if startHour > -1 {
-		fmt.Println("course 4")
-		// start beginning of next matching hour at 0 minute
-		st = st.Truncate(time.Hour)
-
-		// if now is after next start time, make it next hour
-		if now.After(st) {
-			st = st.Add(time.Hour)
-		}
-
 	} else {
 		fmt.Println("course 5")
-		panic("booooom")
+		// it shouldnt reach here
+		return terror.New(fmt.Errorf("unknown condition"), "")
 	}
 
 	sc.intervalSecond = int(interval.Seconds())
