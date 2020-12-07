@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/common/log"
 )
 
+const version = "v1.0.0"
+
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
 	Name string // name of the scheduled task
