@@ -11,7 +11,6 @@ Golang ticker based task runner.
 ss := tickle.New(
     "CheckBalance", // task name
     180,            // run every 180 second
-    true,           // run immediately when initiated
     checkBalance,   // run the checkBalance() function
 )
 
