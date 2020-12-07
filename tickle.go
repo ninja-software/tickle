@@ -9,6 +9,8 @@ import (
 	"github.com/prometheus/common/log"
 )
 
+const version = "v1.0.0"
+
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
 	Name string // name of the scheduled task
@@ -192,8 +194,7 @@ func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute i
 
 // SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes
 func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, loc *time.Location) error {
-	// todo make it 10 again
-	if interval.Seconds() < 1 {
+	if interval.Seconds() < 10 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
 	}
 	if startHour < -1 || startHour > 23 {
@@ -322,10 +323,9 @@ func New(
 	timeSecond int, // interval in seconds
 	funcTask Task, //  function for task to execute
 ) *Tickle {
-	// TODO enable me after test
-	// if timeSecond < 10 {
-	// 	panic("cannot be less than 10 seconds for interval")
-	// }
+	if timeSecond < 10 {
+		panic("cannot be less than 10 seconds for interval")
+	}
 	if funcTask == nil {
 		panic("task must be given")
 	}
