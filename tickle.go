@@ -35,7 +35,7 @@ type Tickle struct {
 
 	// internal
 	intervalSecond int          // how many seconds each interval the task will run at
-	alignAt        time.Time    // tells the ticker align time in relation to (can be past). use case, starts at 1am then repeat every 5 minutes 1:00/1:05/1:10, instead of 1:02/1:07/1:13
+	alignAt        *time.Time   // tells the ticker align time in relation to (can be past). use case, starts at 1am then repeat every 5 minutes 1:00/1:05/1:10, instead of 1:02/1:07/1:13
 	ticker         *time.Ticker // internal ticker
 	timerTicker    *time.Timer  // timer that starts the ticker above
 }
@@ -57,8 +57,9 @@ func (sc *Tickle) Start() {
 	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
 
 	// set align at time, if it is zero
-	if sc.alignAt.IsZero() {
-		sc.alignAt = time.Now().Add(duration)
+	if sc.alignAt == nil {
+		newAlignAt := time.Now().Add(duration)
+		sc.alignAt = &newAlignAt
 	}
 
 	sc.ticker = time.NewTicker(duration)
@@ -309,14 +310,19 @@ func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 }
 
 // GetNextTickTime return the time when next tickle is triggered
-func (sc *Tickle) GetNextTickTime() (time.Time, error) {
+func (sc *Tickle) GetNextTickTime() (*time.Time, error) {
+	if (sc.alignAt == nil) && sc.LastTick.IsZero() {
+		return nil, fmt.Errorf("the ticker is not started yet")
+	}
+
 	// if align time is after now, return align time
-	if sc.alignAt.UTC().After(time.Now()) {
+	if sc.alignAt != nil && sc.alignAt.UTC().After(time.Now()) {
 		return sc.alignAt, nil
 	}
 
 	// otherwise return last tick plus a interval
-	return sc.LastTick.Add(time.Duration(sc.intervalSecond) * time.Second), nil
+	nextTick := sc.LastTick.Add(time.Duration(sc.intervalSecond) * time.Second)
+	return &nextTick, nil
 }
 
 // CounterReset reset all counters to zero
@@ -329,6 +335,9 @@ func (sc *Tickle) CounterReset() {
 // Stop will halt the tickle
 func (sc *Tickle) Stop() {
 	log.Info("Stop tickle")
+
+	// reset the align at time
+	sc.alignAt = nil
 
 	sc.ticker.Stop()
 }
