@@ -264,7 +264,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 
 	} else {
 		fmt.Println("course 5")
-		// it shouldnt reach here
+		// it shouldn't reach here
 		return terror.New(fmt.Errorf("unknown condition"), "")
 	}
 
@@ -325,7 +325,7 @@ func (sc *Tickle) CounterReset() {
 func (sc *Tickle) Stop() {
 	log.Info("Stop tickle")
 
-	// reset the align at time
+	// reset the time info
 	sc.StartedAt = nil
 	sc.NextTick = nil
 
