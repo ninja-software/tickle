@@ -56,6 +56,11 @@ func (sc *Tickle) Start() {
 
 	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
 
+	// set align at time, if it is zero
+	if sc.alignAt.IsZero() {
+		sc.alignAt = time.Now().Add(duration)
+	}
+
 	sc.ticker = time.NewTicker(duration)
 	done := make(chan bool, 1)
 	go func(t *time.Ticker) {
@@ -305,26 +310,13 @@ func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 
 // GetNextTickTime return the time when next tickle is triggered
 func (sc *Tickle) GetNextTickTime() (time.Time, error) {
-	// now time
-	now := time.Now()
-	// align time
-	alignTime := sc.alignAt.UTC()
-
 	// if align time is after now, return align time
-	if alignTime.After(now) {
-		return alignTime, nil
+	if sc.alignAt.UTC().After(time.Now()) {
+		return sc.alignAt, nil
 	}
 
-	// otherwise set the time of the align time
-	nextTickle := time.Date(now.Year(), now.Month(), now.Day(), alignTime.Hour(), alignTime.Minute(), alignTime.Second(), 0, time.UTC)
-
-	// if nextTickle is after now, return
-	if nextTickle.After(now) {
-		return nextTickle, nil
-	}
-
-	// otherwise return next day
-	return nextTickle.Add(24 * time.Hour), nil
+	// otherwise return last tick plus a interval
+	return sc.LastTick.Add(time.Duration(sc.intervalSecond) * time.Second), nil
 }
 
 // CounterReset reset all counters to zero
