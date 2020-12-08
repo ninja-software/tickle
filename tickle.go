@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/common/log"
 )
 
-const version = "v1.0.0"
+const version = "v1.1.0"
 
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
