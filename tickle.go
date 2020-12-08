@@ -303,6 +303,30 @@ func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 	return nil
 }
 
+// GetNextTickTime return the time when next tickle is triggered
+func (sc *Tickle) GetNextTickTime() (time.Time, error) {
+	// now time
+	now := time.Now()
+	// align time
+	alignTime := sc.alignAt.UTC()
+
+	// if align time is after now, return align time
+	if alignTime.After(now) {
+		return alignTime, nil
+	}
+
+	// otherwise set the time of the align time
+	nextTickle := time.Date(now.Year(), now.Month(), now.Day(), alignTime.Hour(), alignTime.Minute(), alignTime.Second(), 0, time.UTC)
+
+	// if nextTickle is after now, return
+	if nextTickle.After(now) {
+		return nextTickle, nil
+	}
+
+	// otherwise return next day
+	return nextTickle.Add(24 * time.Hour), nil
+}
+
 // CounterReset reset all counters to zero
 func (sc *Tickle) CounterReset() {
 	sc.Count = 0
