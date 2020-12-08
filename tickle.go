@@ -16,15 +16,17 @@ type Tickle struct {
 	Name string // name of the scheduled task
 
 	FuncTask     Task     // function to be executed on regular interval
-	FuncClean    Clean    // function to run when error occured (optional)
-	FuncRecovery Recovery // function to run when panic occured (optional)
+	FuncClean    Clean    // function to run when error occurred (optional)
+	FuncRecovery Recovery // function to run when panic occurred (optional)
 
 	Count        int // number of times this been triggered
 	CountFail    int // number of failed trigger
 	CountSuccess int // number of successful trigger
 
-	LastError *error    // what is the task's last error
-	LastTick  time.Time // when is the task last ran
+	LastError *error     // what is the task's last error
+	LastTick  *time.Time // when is the task last ran (Note: changing will not affect the ticker)
+	NextTick  *time.Time // when the next TaskRun() will be triggered (Note: changing will not affect the ticker)
+	StartedAt *time.Time // when the tick was started (Note: changing will not affect the ticker)
 
 	// time allowed to run in a range (inclusive)   -----[      ]-----    [ = open      ] = close
 	TimeRangeOpen  time.Time // when the task is allowed to run after
@@ -35,7 +37,6 @@ type Tickle struct {
 
 	// internal
 	intervalSecond int          // how many seconds each interval the task will run at
-	alignAt        *time.Time   // tells the ticker align time in relation to (can be past). use case, starts at 1am then repeat every 5 minutes 1:00/1:05/1:10, instead of 1:02/1:07/1:13
 	ticker         *time.Ticker // internal ticker
 	timerTicker    *time.Timer  // timer that starts the ticker above
 }
@@ -47,7 +48,7 @@ type Task func() (int, error)
 // Clean uses user supplied function to run clean from error
 type Clean func(interface{}, error)
 
-// Recovery uses user supplied function to run when panic occured
+// Recovery uses user supplied function to run when panic occurred
 type Recovery func(error)
 
 // Start will begin the tickle
@@ -56,11 +57,11 @@ func (sc *Tickle) Start() {
 
 	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
 
-	// set align at time, if it is zero
-	if sc.alignAt == nil {
-		newAlignAt := time.Now().Add(duration)
-		sc.alignAt = &newAlignAt
-	}
+	// remember
+	now := time.Now()
+	sc.StartedAt = &now
+	next := now.Add(time.Duration(sc.intervalSecond) * time.Second)
+	sc.NextTick = &next
 
 	sc.ticker = time.NewTicker(duration)
 	done := make(chan bool, 1)
@@ -98,7 +99,10 @@ func (sc *Tickle) TaskRun() {
 	}
 
 	// remember
-	sc.LastTick = time.Now()
+	now := time.Now()
+	sc.LastTick = &now
+	next := now.Add(time.Duration(sc.intervalSecond) * time.Second)
+	sc.NextTick = &next
 
 	// recover from panic from FuncRecovery
 	defer func() {
@@ -198,7 +202,7 @@ func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute i
 	return sc.SetIntervalAtTimezone(interval, startHour, startMinute, loc)
 }
 
-// SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes
+// SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes (Note: will auto stop and auto start after set)
 func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, loc *time.Location) error {
 	if interval.Seconds() < 10 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
@@ -264,13 +268,14 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		return terror.New(fmt.Errorf("unknown condition"), "")
 	}
 
+	sc.StartedAt = &st
+	sc.NextTick = &st
 	sc.intervalSecond = int(interval.Seconds())
-	sc.alignAt = st
-	start := st.Sub(now)
+	startInDuration := st.Sub(now)
 
-	log.Infof("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, start.String(), interval.String())
+	log.Infof("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, startInDuration.String(), interval.String())
 
-	a := time.AfterFunc(start, func() {
+	a := time.AfterFunc(startInDuration, func() {
 		sc.TaskRun()
 		sc.Start()
 	})
@@ -309,22 +314,6 @@ func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 	return nil
 }
 
-// GetNextTickTime return the time when next tickle is triggered
-func (sc *Tickle) GetNextTickTime() (*time.Time, error) {
-	if (sc.alignAt == nil) && sc.LastTick.IsZero() {
-		return nil, fmt.Errorf("the ticker is not started yet")
-	}
-
-	// if align time is after now, return align time
-	if sc.alignAt != nil && sc.alignAt.UTC().After(time.Now()) {
-		return sc.alignAt, nil
-	}
-
-	// otherwise return last tick plus a interval
-	nextTick := sc.LastTick.Add(time.Duration(sc.intervalSecond) * time.Second)
-	return &nextTick, nil
-}
-
 // CounterReset reset all counters to zero
 func (sc *Tickle) CounterReset() {
 	sc.Count = 0
@@ -337,7 +326,8 @@ func (sc *Tickle) Stop() {
 	log.Info("Stop tickle")
 
 	// reset the align at time
-	sc.alignAt = nil
+	sc.StartedAt = nil
+	sc.NextTick = nil
 
 	sc.ticker.Stop()
 }
@@ -359,7 +349,7 @@ func New(
 		Name:            taskName,
 		FuncTask:        funcTask,
 		intervalSecond:  timeSecond,
-		StopMaxInterval: 2147483647, // ~68 years if triggger every second
+		StopMaxInterval: 2147483647, // ~68 years if triggered every second
 	}
 
 	return tk
