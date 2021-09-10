@@ -5,11 +5,12 @@ import (
 	"runtime/debug"
 	"time"
 
+	"log"
+
 	"github.com/ninja-software/terror"
-	"github.com/prometheus/common/log"
 )
 
-const version = "v1.1.0"
+const Version = "v1.1.1"
 
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
@@ -53,7 +54,7 @@ type Recovery func(error)
 
 // Start will begin the tickle
 func (sc *Tickle) Start() {
-	log.Infof("Start tickle (%s)\n", sc.Name)
+	log.Printf("Start tickle (%s)\n", sc.Name)
 
 	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
 
@@ -71,7 +72,7 @@ func (sc *Tickle) Start() {
 			case <-t.C:
 				sc.TaskRun()
 			case <-done:
-				log.Infof("Tickle ticker done. (%s)\n", sc.Name)
+				log.Printf("Tickle ticker done. (%s)\n", sc.Name)
 				return
 			}
 		}
@@ -108,7 +109,7 @@ func (sc *Tickle) TaskRun() {
 	defer func() {
 		if rec := recover(); rec != nil {
 			message := "Tickle task panicked-panicked (" + sc.Name + ")"
-			log.Errorln(message)
+			log.Println(message)
 			strStack := string(debug.Stack())
 
 			var err error
@@ -120,14 +121,14 @@ func (sc *Tickle) TaskRun() {
 			}
 			sc.LastError = &err
 
-			log.Errorln("Tickle panic-panic recovered ("+sc.Name+"): ", err, "\n", strStack)
+			log.Println("Tickle panic-panic recovered ("+sc.Name+"): ", err, "\n", strStack)
 		}
 	}()
 	// recover from panic
 	defer func() {
 		if rec := recover(); rec != nil {
 			message := "Tickle task panicked (" + sc.Name + ")"
-			log.Errorln(message)
+			log.Println(message)
 			strStack := string(debug.Stack())
 
 			var err error
@@ -139,7 +140,7 @@ func (sc *Tickle) TaskRun() {
 			}
 			sc.LastError = &err
 
-			log.Errorln("Tickle panic recovered ("+sc.Name+"): ", err, "\n", strStack)
+			log.Println("Tickle panic recovered ("+sc.Name+"): ", err, "\n", strStack)
 
 			if sc.FuncRecovery != nil {
 				sc.FuncRecovery(err)
@@ -147,14 +148,14 @@ func (sc *Tickle) TaskRun() {
 		}
 	}()
 
-	log.Infof("Tickle task run (%s)\n", sc.Name)
+	log.Printf("Tickle task run (%s)\n", sc.Name)
 	defer func() {
-		log.Infof("Tickle task exit (%s)\n", sc.Name)
+		log.Printf("Tickle task exit (%s)\n", sc.Name)
 	}()
 
 	if sc.FuncTask == nil {
 		err := fmt.Errorf("Tickle func is nil")
-		log.Errorf("Tickle task failed (%s)\n", sc.Name)
+		log.Printf("Tickle task failed (%s)\n", sc.Name)
 		terror.Echo(err)
 		sc.LastError = &err
 		sc.CountFail++
@@ -164,7 +165,7 @@ func (sc *Tickle) TaskRun() {
 
 	dat, err := sc.FuncTask()
 	if err != nil {
-		log.Errorf("Tickle task failed (%s)\n", sc.Name)
+		log.Printf("Tickle task failed (%s)\n", sc.Name)
 		terror.Echo(err)
 		sc.LastError = &err
 		sc.CountFail++
@@ -273,7 +274,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 	sc.intervalSecond = int(interval.Seconds())
 	startInDuration := st.Sub(now)
 
-	log.Infof("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, startInDuration.String(), interval.String())
+	log.Printf("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, startInDuration.String(), interval.String())
 
 	a := time.AfterFunc(startInDuration, func() {
 		sc.TaskRun()
@@ -323,7 +324,7 @@ func (sc *Tickle) CounterReset() {
 
 // Stop will halt the tickle
 func (sc *Tickle) Stop() {
-	log.Info("Stop tickle")
+	log.Println("Stop tickle")
 
 	// reset the time info
 	sc.StartedAt = nil
