@@ -10,7 +10,10 @@ import (
 	"github.com/ninja-software/terror"
 )
 
-const Version = "v1.1.1"
+const Version = "v1.2.0"
+
+// MinDurationOverride override mininum 10 seconds per loop
+var MinDurationOverride = false
 
 // Tickle contain the information that the tickle inner settings
 type Tickle struct {
@@ -37,7 +40,7 @@ type Tickle struct {
 	StopMaxError    int // stops when maximum number of consecutive error reached
 
 	// internal
-	intervalSecond int          // how many seconds each interval the task will run at
+	intervalSecond float64      // how many seconds each interval the task will run at
 	ticker         *time.Ticker // internal ticker
 	timerTicker    *time.Timer  // timer that starts the ticker above
 }
@@ -56,12 +59,12 @@ type Recovery func(error)
 func (sc *Tickle) Start() {
 	log.Printf("Start tickle (%s)\n", sc.Name)
 
-	var duration time.Duration = time.Second * time.Duration(sc.intervalSecond)
+	var duration time.Duration = time.Duration(float64(time.Second) * sc.intervalSecond)
 
 	// remember
 	now := time.Now()
 	sc.StartedAt = &now
-	next := now.Add(time.Duration(sc.intervalSecond) * time.Second)
+	next := now.Add(time.Duration(float64(time.Second) * sc.intervalSecond))
 	sc.NextTick = &next
 
 	sc.ticker = time.NewTicker(duration)
@@ -183,11 +186,11 @@ func (sc *Tickle) TaskRun() {
 
 // SetInterval change the ticker reoccuring time rate
 func (sc *Tickle) SetInterval(interval time.Duration) error {
-	if interval.Seconds() < 10 {
+	if !MinDurationOverride && interval.Seconds() < 10 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
 	}
 
-	sc.intervalSecond = int(interval.Seconds())
+	sc.intervalSecond = float64(interval.Seconds())
 
 	sc.Stop()
 	sc.Start()
@@ -205,7 +208,7 @@ func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute i
 
 // SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes (Note: will auto stop and auto start after set)
 func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, loc *time.Location) error {
-	if interval.Seconds() < 10 {
+	if !MinDurationOverride && interval.Seconds() < 10 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
 	}
 	if startHour < -1 || startHour > 23 {
@@ -271,7 +274,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 
 	sc.StartedAt = &st
 	sc.NextTick = &st
-	sc.intervalSecond = int(interval.Seconds())
+	sc.intervalSecond = float64(interval.Seconds())
 	startInDuration := st.Sub(now)
 
 	log.Printf("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, startInDuration.String(), interval.String())
@@ -336,11 +339,14 @@ func (sc *Tickle) Stop() {
 // New makes creating tickle easily
 func New(
 	taskName string, // name of the task to identify, please make it unique
-	timeSecond int, // interval in seconds
+	timeSecond float64, // interval in seconds
 	funcTask Task, //  function for task to execute
 ) *Tickle {
-	if timeSecond < 10 {
+	if !MinDurationOverride && timeSecond < 10 {
 		panic("cannot be less than 10 seconds for interval")
+	}
+	if timeSecond < 0 {
+		panic("must be larger than 0 second for interval")
 	}
 	if funcTask == nil {
 		panic("task must be given")
