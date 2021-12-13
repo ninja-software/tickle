@@ -10,7 +10,7 @@ import (
 	"github.com/ninja-software/terror"
 )
 
-const Version = "v1.2.0"
+const Version = "v1.2.1"
 
 // MinDurationOverride override mininum 10 seconds per loop
 var MinDurationOverride = false
