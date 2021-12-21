@@ -2,6 +2,7 @@ package tickle
 
 import (
 	"fmt"
+	"log"
 	"runtime/debug"
 	"time"
 
@@ -359,11 +360,14 @@ func New(
 		panic("task must be given")
 	}
 
+	l := log.Default()
+
 	tk := &Tickle{
 		Name:            taskName,
 		FuncTask:        funcTask,
 		intervalSecond:  timeSecond,
 		StopMaxInterval: 2147483647, // ~68 years if triggered every second
+		log:             l,
 	}
 
 	return tk
