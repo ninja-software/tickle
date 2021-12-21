@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ninja-software/log_helpers"
 	"github.com/ninja-software/tickle"
 	"github.com/rs/zerolog"
 )
@@ -57,8 +56,8 @@ func main() {
 	)
 
 	// Override tickle standard library logger
-	log := log_helpers.LoggerInitZero("development")
-	tkLogger := log_helpers.NamedLogger(log, "tickle").With().Str("task", taskname).Logger().Level(zerolog.DebugLevel)
+	log := zerolog.New(zerolog.NewConsoleWriter()).With().Timestamp().Logger()
+	tkLogger := log.With().Str("name", "tickle").Str("task", taskname).Logger().Level(zerolog.DebugLevel)
 	tk.Log = &tkLogger
 	tk.LogVerboseMode = true
 
