@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const Version = "v1.2.1"
+const Version = "v1.3.0"
 
 // MinDurationOverride override minimum 10 seconds per loop
 var MinDurationOverride = false
