@@ -5,8 +5,6 @@ import (
 	"log"
 	"runtime/debug"
 	"time"
-
-	"github.com/ninja-software/terror"
 )
 
 const Version = "v1.2.1"
@@ -175,8 +173,7 @@ func (sc *Tickle) TaskRun() {
 
 	if sc.FuncTask == nil {
 		err := fmt.Errorf("Tickle func is nil")
-		sc.Log.Printf("Tickle task failed (%s)", sc.Name)
-		terror.Echo(err)
+		sc.Log.Printf("Tickle task failed (%s): %w", sc.Name, err)
 		sc.LastError = &err
 		sc.CountFail++
 		sc.Count++
@@ -185,8 +182,7 @@ func (sc *Tickle) TaskRun() {
 
 	dat, err := sc.FuncTask()
 	if err != nil {
-		sc.Log.Printf("Tickle task failed (%s)", sc.Name)
-		terror.Echo(err)
+		sc.Log.Printf("Tickle task failed (%s): %w", sc.Name, err)
 		sc.LastError = &err
 		sc.CountFail++
 
@@ -204,7 +200,7 @@ func (sc *Tickle) TaskRun() {
 // SetInterval change the ticker reoccurring time rate
 func (sc *Tickle) SetInterval(interval time.Duration) error {
 	if !MinDurationOverride && interval.Seconds() < 10 {
-		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
+		return fmt.Errorf("duration must be 10 seconds or above")
 	}
 
 	sc.intervalSecond = float64(interval.Seconds())
@@ -230,13 +226,13 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		sc.Log = log.Default()
 	}
 	if !MinDurationOverride && interval.Seconds() < 10 {
-		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
+		return fmt.Errorf("duration must be 10 seconds or above")
 	}
 	if startHour < -1 || startHour > 23 {
-		return terror.New(fmt.Errorf("startHour must be range of -1..23"), "")
+		return fmt.Errorf("startHour must be range of -1..23")
 	}
 	if startMinute < -1 || startMinute > 59 {
-		return terror.New(fmt.Errorf("startMinute must be range of -1..59"), "")
+		return fmt.Errorf("startMinute must be range of -1..59")
 	}
 
 	if sc.ticker != nil {
@@ -298,7 +294,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 			sc.Log.Printf("course 5")
 		}
 		// it shouldn't reach here
-		return terror.New(fmt.Errorf("unknown condition"), "")
+		return fmt.Errorf("unknown condition")
 	}
 
 	sc.StartedAt = &st
@@ -320,7 +316,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 // SetTimeOpen change the time range that task would run
 func (sc *Tickle) SetTimeOpen(y, m, d, h, min, s int) error {
 	if m < 1 || m > 12 {
-		return terror.New(fmt.Errorf("wrong month number %d", m), "")
+		return fmt.Errorf("wrong month number %d", m)
 	}
 
 	mth := time.Month(m)
@@ -335,7 +331,7 @@ func (sc *Tickle) SetTimeOpen(y, m, d, h, min, s int) error {
 // SetTimeClose change the time range that task would not run
 func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 	if m < 1 || m > 12 {
-		return terror.New(fmt.Errorf("wrong month number %d", m), "")
+		return fmt.Errorf("wrong month number %d", m)
 	}
 
 	mth := time.Month(m)
