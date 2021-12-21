@@ -43,10 +43,11 @@ var clean tickle.Clean = func(dat interface{}, err error) {
 }
 
 func main() {
-	log := log_helpers.LoggerInitZero("development")
+	// Start context to block on
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGKILL)
 	defer stop()
 
+	// Initialise tickle
 	taskname := "sayMoo"
 	tickle.MinDurationOverride = true
 	tk := tickle.New(
@@ -55,17 +56,21 @@ func main() {
 		sayMoo,   // run the sayMoo() function
 	)
 
-	// Override the standard logger
+	// Override tickle standard library logger
+	log := log_helpers.LoggerInitZero("development")
 	tkLogger := log_helpers.NamedLogger(log, "tickle").With().Str("task", taskname).Logger().Level(zerolog.DebugLevel)
 	tk.Log = &tkLogger
 	tk.LogVerboseMode = true
 
-	// do when sayMoo() returns error
+	// Run clean on error
 	tk.FuncClean = clean
 
-	// do when sayMoo() panics
+	// Run recover on panics
 	tk.FuncRecovery = recovery
 
+	// Start tickle cycle
 	tk.Start()
+
+	// Block for the example
 	<-ctx.Done()
 }
