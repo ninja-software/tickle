@@ -37,7 +37,7 @@ var recovery tickle.Recovery = func(err error) {
 }
 
 var clean tickle.Clean = func(dat interface{}, err error) {
-	fmt.Printf("moo %d is noooooo good\n", dat.(int))
+	fmt.Printf("moo %d is no good\n", dat.(int))
 	// happen when count equals 3, 6, 9, ...
 }
 

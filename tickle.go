@@ -11,7 +11,7 @@ import (
 
 const Version = "v1.2.1"
 
-// MinDurationOverride override mininum 10 seconds per loop
+// MinDurationOverride override minimum 10 seconds per loop
 var MinDurationOverride = false
 
 // Tickle contain the information that the tickle inner settings
@@ -201,7 +201,7 @@ func (sc *Tickle) TaskRun() {
 	sc.Count++
 }
 
-// SetInterval change the ticker reoccuring time rate
+// SetInterval change the ticker reoccurring time rate
 func (sc *Tickle) SetInterval(interval time.Duration) error {
 	if !MinDurationOverride && interval.Seconds() < 10 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
