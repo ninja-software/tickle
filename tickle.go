@@ -1,22 +1,31 @@
 package tickle
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"runtime/debug"
 	"time"
-
-	"log"
-
-	"github.com/ninja-software/terror"
 )
 
 const Version = "v1.2.1"
 
-// MinDurationOverride override mininum 10 seconds per loop
+// MinDurationOverride override minimum 10 seconds per loop
 var MinDurationOverride = false
 
+// Errors
+var (
+	ErrTaskPanic             = fmt.Errorf("tickle task panicked")
+	ErrNilTask               = fmt.Errorf("tickle func is nil")
+	ErrInvalidTimeRangeMonth = fmt.Errorf("wrong month number")
+	ErrInvalidDuration       = fmt.Errorf("duration must be 10 seconds or above")
+	ErrInvalidTimeRangeHr    = fmt.Errorf("startHour must be range of -1..23")
+	ErrInvalidTimeRangeMin   = fmt.Errorf("startMinute must be range of -1..59")
+	ErrUnknownCondition      = fmt.Errorf("unknown condition")
+)
+
 // Tickle contain the information that the tickle inner settings
-type Tickle struct {
+type Tickle struct { // TODO: V2 Evaluate what NEEDS to be public and what can be passed in the config/options struct
 	Name string // name of the scheduled task
 
 	FuncTask     Task     // function to be executed on regular interval
@@ -40,14 +49,22 @@ type Tickle struct {
 	StopMaxError    int // stops when maximum number of consecutive error reached
 
 	// internal
+
 	intervalSecond float64      // how many seconds each interval the task will run at
 	ticker         *time.Ticker // internal ticker
 	timerTicker    *time.Timer  // timer that starts the ticker above
+
+	Log            Logger // Log to allow library users to override default logger
+	LogVerboseMode bool   // Print more details about tickle execution for debugging tickle
+
+	Tracer Tracer // Add tracing to see task evacuation times
+	// Used to intergrate with other tracing libraries like sentry
+	TracerPerentCtx context.Context // TODO: V2 remove this and pass though as a parameter
 }
 
 // Task uses user supplied function to run on interval
 // It will returns the number of action/change/touch/created/update/delete performed and error status
-type Task func() (int, error)
+type Task func() (int, error) // TODO: V2 accept a context.Context for the tracer to continue in lower layers, I.E. database
 
 // Clean uses user supplied function to run clean from error
 type Clean func(interface{}, error)
@@ -55,9 +72,44 @@ type Clean func(interface{}, error)
 // Recovery uses user supplied function to run when panic occurred
 type Recovery func(error)
 
+type Tracer interface {
+	// OnTaskStart is called to start the tracer recording
+	OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context
+	// OnTaskStart is called to start the stop tracer recording and log the details
+	OnTaskStop(ctx context.Context, log Logger, taskName string)
+}
+
+type defaultTracer struct {
+	startTime time.Time
+}
+
+func (t *defaultTracer) OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context {
+	t.startTime = time.Now()
+	log.Printf("tickle task start (%s)", taskName)
+	return ctx
+}
+
+func (t *defaultTracer) OnTaskStop(ctx context.Context, log Logger, taskName string) {
+	// end replaces uses of time.Now() to take into account the monotonic clock
+	// reading stored in start, such that duration = end - start is unaffected by
+	// changes in the system wall clock.
+	end := t.startTime.Add(time.Since(t.startTime))
+
+	log.Printf("tickle task end (%s): duration %s", taskName, end.Sub(t.startTime))
+}
+
+// Log uses user supplied function to log information
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+
 // Start will begin the tickle
 func (sc *Tickle) Start() {
-	log.Printf("Start tickle (%s)\n", sc.Name)
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
+	sc.Log.Printf("Start tickle (%s)", sc.Name)
 
 	var duration time.Duration = time.Duration(float64(time.Second) * sc.intervalSecond)
 
@@ -75,7 +127,7 @@ func (sc *Tickle) Start() {
 			case <-t.C:
 				sc.TaskRun()
 			case <-done:
-				log.Printf("Tickle ticker done. (%s)\n", sc.Name)
+				sc.Log.Printf("Tickle ticker done. (%s)", sc.Name)
 				return
 			}
 		}
@@ -83,7 +135,7 @@ func (sc *Tickle) Start() {
 }
 
 // TaskRun execute the function (task) it been assigned to
-func (sc *Tickle) TaskRun() {
+func (sc *Tickle) TaskRun() { // TODO: V2 accept a context.Context for the tracer
 	// sanity check
 	// too early
 	if !sc.TimeRangeOpen.IsZero() && time.Now().Before(sc.TimeRangeOpen) {
@@ -101,6 +153,17 @@ func (sc *Tickle) TaskRun() {
 	if sc.StopMaxError > 0 && sc.CountFail > sc.StopMaxError {
 		return
 	}
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
+	// Ensure tracer is initialised
+	if sc.Tracer == nil {
+		sc.Tracer = &defaultTracer{}
+	}
+	if sc.TracerPerentCtx == nil {
+		sc.TracerPerentCtx = context.Background()
+	}
 
 	// remember
 	now := time.Now()
@@ -108,42 +171,36 @@ func (sc *Tickle) TaskRun() {
 	next := now.Add(time.Duration(sc.intervalSecond) * time.Second)
 	sc.NextTick = &next
 
-	// recover from panic from FuncRecovery
-	defer func() {
-		if rec := recover(); rec != nil {
-			message := "Tickle task panicked-panicked (" + sc.Name + ")"
-			log.Println(message)
-			strStack := string(debug.Stack())
-
-			var err error
-			switch v := rec.(type) {
-			case error:
-				err = v
-			default:
-				err = fmt.Errorf(message)
-			}
-			sc.LastError = &err
-
-			log.Println("Tickle panic-panic recovered ("+sc.Name+"): ", err, "\n", strStack)
-		}
-	}()
 	// recover from panic
 	defer func() {
 		if rec := recover(); rec != nil {
-			message := "Tickle task panicked (" + sc.Name + ")"
-			log.Println(message)
+			err := fmt.Errorf("%w ( %s )", ErrTaskPanic, sc.Name)
+			sc.Log.Printf("%w", err)
 			strStack := string(debug.Stack())
 
-			var err error
 			switch v := rec.(type) {
 			case error:
 				err = v
-			default:
-				err = fmt.Errorf(message)
 			}
 			sc.LastError = &err
 
-			log.Println("Tickle panic recovered ("+sc.Name+"): ", err, "\n", strStack)
+			sc.Log.Printf("Tickle panic-panic recovered (%s): %w: %s", sc.Name, err, strStack)
+		}
+	}()
+	// recover from panic using suplied Recovery Func
+	defer func() {
+		if rec := recover(); rec != nil {
+			err := fmt.Errorf("%w ( %s )", ErrTaskPanic, sc.Name)
+			sc.Log.Printf("%w", err)
+			strStack := string(debug.Stack())
+
+			switch v := rec.(type) {
+			case error:
+				err = v
+			}
+			sc.LastError = &err
+
+			sc.Log.Printf("Tickle panic-panic recovered (%s): %w: %s", sc.Name, err, strStack)
 
 			if sc.FuncRecovery != nil {
 				sc.FuncRecovery(err)
@@ -151,15 +208,12 @@ func (sc *Tickle) TaskRun() {
 		}
 	}()
 
-	log.Printf("Tickle task run (%s)\n", sc.Name)
-	defer func() {
-		log.Printf("Tickle task exit (%s)\n", sc.Name)
-	}()
+	ctx := sc.Tracer.OnTaskStart(sc.TracerPerentCtx, sc.Log, "tickle", sc.Name)
+	defer sc.Tracer.OnTaskStop(ctx, sc.Log, sc.Name)
 
 	if sc.FuncTask == nil {
-		err := fmt.Errorf("Tickle func is nil")
-		log.Printf("Tickle task failed (%s)\n", sc.Name)
-		terror.Echo(err)
+		err := ErrNilTask
+		sc.Log.Printf("Tickle task failed (%s): %w", sc.Name, err)
 		sc.LastError = &err
 		sc.CountFail++
 		sc.Count++
@@ -168,8 +222,7 @@ func (sc *Tickle) TaskRun() {
 
 	dat, err := sc.FuncTask()
 	if err != nil {
-		log.Printf("Tickle task failed (%s)\n", sc.Name)
-		terror.Echo(err)
+		sc.Log.Printf("Tickle task failed (%s): %w", sc.Name, err)
 		sc.LastError = &err
 		sc.CountFail++
 
@@ -184,10 +237,10 @@ func (sc *Tickle) TaskRun() {
 	sc.Count++
 }
 
-// SetInterval change the ticker reoccuring time rate
+// SetInterval change the ticker reoccurring time rate
 func (sc *Tickle) SetInterval(interval time.Duration) error {
 	if !MinDurationOverride && interval.Seconds() < 10 {
-		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
+		return ErrInvalidDuration
 	}
 
 	sc.intervalSecond = float64(interval.Seconds())
@@ -208,14 +261,18 @@ func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute i
 
 // SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes (Note: will auto stop and auto start after set)
 func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, loc *time.Location) error {
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
 	if !MinDurationOverride && interval.Seconds() < 10 {
-		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
+		return ErrInvalidDuration
 	}
 	if startHour < -1 || startHour > 23 {
-		return terror.New(fmt.Errorf("startHour must be range of -1..23"), "")
+		return ErrInvalidTimeRangeHr
 	}
 	if startMinute < -1 || startMinute > 59 {
-		return terror.New(fmt.Errorf("startMinute must be range of -1..59"), "")
+		return ErrInvalidTimeRangeMin
 	}
 
 	if sc.ticker != nil {
@@ -231,7 +288,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 	st := now.UTC()
 
 	if startHour == -1 && startMinute == -1 {
-		fmt.Println("course 1")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 1")
+		}
 		// start next minute
 		st = st.Truncate(time.Minute)
 
@@ -241,7 +300,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		}
 
 	} else if startHour == -1 && startMinute > -1 {
-		fmt.Println("course 2")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 2")
+		}
 		// start beginning of next hour at matching minute
 		st = st.Truncate(time.Hour)
 		st = st.Add(time.Minute * time.Duration(startMinute))
@@ -252,7 +313,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		}
 
 	} else if startHour > -1 {
-		fmt.Println("course 3")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 3")
+		}
 		// start beginning of next matching hour at matching minute
 		// or if startMinute == -1, then minute at 0
 		if startMinute == -1 {
@@ -267,9 +330,11 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		}
 
 	} else {
-		fmt.Println("course 5")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 5")
+		}
 		// it shouldn't reach here
-		return terror.New(fmt.Errorf("unknown condition"), "")
+		return ErrUnknownCondition
 	}
 
 	sc.StartedAt = &st
@@ -277,7 +342,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 	sc.intervalSecond = float64(interval.Seconds())
 	startInDuration := st.Sub(now)
 
-	log.Printf("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, startInDuration.String(), interval.String())
+	sc.Log.Printf("Set tickle (%s). Starts at %s (interval %s)", sc.Name, startInDuration.String(), interval.String())
 
 	a := time.AfterFunc(startInDuration, func() {
 		sc.TaskRun()
@@ -291,7 +356,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 // SetTimeOpen change the time range that task would run
 func (sc *Tickle) SetTimeOpen(y, m, d, h, min, s int) error {
 	if m < 1 || m > 12 {
-		return terror.New(fmt.Errorf("wrong month number %d", m), "")
+		return fmt.Errorf("%w: got %d", ErrInvalidTimeRangeMonth, m)
 	}
 
 	mth := time.Month(m)
@@ -306,7 +371,7 @@ func (sc *Tickle) SetTimeOpen(y, m, d, h, min, s int) error {
 // SetTimeClose change the time range that task would not run
 func (sc *Tickle) SetTimeClose(y, m, d, h, min, s int) error {
 	if m < 1 || m > 12 {
-		return terror.New(fmt.Errorf("wrong month number %d", m), "")
+		return fmt.Errorf("%w: got %d", ErrInvalidTimeRangeMonth, m)
 	}
 
 	mth := time.Month(m)
@@ -327,7 +392,11 @@ func (sc *Tickle) CounterReset() {
 
 // Stop will halt the tickle
 func (sc *Tickle) Stop() {
-	log.Println("Stop tickle")
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
+	sc.Log.Printf("Stop tickle")
 
 	// reset the time info
 	sc.StartedAt = nil
@@ -341,6 +410,7 @@ func New(
 	taskName string, // name of the task to identify, please make it unique
 	timeSecond float64, // interval in seconds
 	funcTask Task, //  function for task to execute
+	// TODO: V2 use a config struct
 ) *Tickle {
 	if !MinDurationOverride && timeSecond < 10 {
 		panic("cannot be less than 10 seconds for interval")
@@ -357,6 +427,8 @@ func New(
 		FuncTask:        funcTask,
 		intervalSecond:  timeSecond,
 		StopMaxInterval: 2147483647, // ~68 years if triggered every second
+		Log:             log.Default(),
+		Tracer:          &defaultTracer{},
 	}
 
 	return tk
