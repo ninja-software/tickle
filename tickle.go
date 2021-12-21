@@ -2,10 +2,9 @@ package tickle
 
 import (
 	"fmt"
+	"log"
 	"runtime/debug"
 	"time"
-
-	"log"
 
 	"github.com/ninja-software/terror"
 )
@@ -40,9 +39,13 @@ type Tickle struct {
 	StopMaxError    int // stops when maximum number of consecutive error reached
 
 	// internal
+
 	intervalSecond float64      // how many seconds each interval the task will run at
 	ticker         *time.Ticker // internal ticker
 	timerTicker    *time.Timer  // timer that starts the ticker above
+
+	Log            Logger // Log to allow library users to override default logger
+	LogVerboseMode bool   // Print more details about tickle execution for debugging tickle
 }
 
 // Task uses user supplied function to run on interval
@@ -55,9 +58,18 @@ type Clean func(interface{}, error)
 // Recovery uses user supplied function to run when panic occurred
 type Recovery func(error)
 
+// Log uses user supplied function to log information
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+
 // Start will begin the tickle
 func (sc *Tickle) Start() {
-	log.Printf("Start tickle (%s)\n", sc.Name)
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
+	sc.Log.Printf("Start tickle (%s)", sc.Name)
 
 	var duration time.Duration = time.Duration(float64(time.Second) * sc.intervalSecond)
 
@@ -75,7 +87,7 @@ func (sc *Tickle) Start() {
 			case <-t.C:
 				sc.TaskRun()
 			case <-done:
-				log.Printf("Tickle ticker done. (%s)\n", sc.Name)
+				sc.Log.Printf("Tickle ticker done. (%s)", sc.Name)
 				return
 			}
 		}
@@ -101,6 +113,10 @@ func (sc *Tickle) TaskRun() {
 	if sc.StopMaxError > 0 && sc.CountFail > sc.StopMaxError {
 		return
 	}
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
 
 	// remember
 	now := time.Now()
@@ -112,7 +128,7 @@ func (sc *Tickle) TaskRun() {
 	defer func() {
 		if rec := recover(); rec != nil {
 			message := "Tickle task panicked-panicked (" + sc.Name + ")"
-			log.Println(message)
+			sc.Log.Printf(message)
 			strStack := string(debug.Stack())
 
 			var err error
@@ -124,14 +140,14 @@ func (sc *Tickle) TaskRun() {
 			}
 			sc.LastError = &err
 
-			log.Println("Tickle panic-panic recovered ("+sc.Name+"): ", err, "\n", strStack)
+			sc.Log.Printf("Tickle panic-panic recovered ("+sc.Name+"): ", err, "", strStack)
 		}
 	}()
 	// recover from panic
 	defer func() {
 		if rec := recover(); rec != nil {
 			message := "Tickle task panicked (" + sc.Name + ")"
-			log.Println(message)
+			sc.Log.Printf(message)
 			strStack := string(debug.Stack())
 
 			var err error
@@ -143,7 +159,7 @@ func (sc *Tickle) TaskRun() {
 			}
 			sc.LastError = &err
 
-			log.Println("Tickle panic recovered ("+sc.Name+"): ", err, "\n", strStack)
+			sc.Log.Printf("Tickle panic recovered ("+sc.Name+"): ", err, "", strStack)
 
 			if sc.FuncRecovery != nil {
 				sc.FuncRecovery(err)
@@ -151,14 +167,15 @@ func (sc *Tickle) TaskRun() {
 		}
 	}()
 
-	log.Printf("Tickle task run (%s)\n", sc.Name)
+	// TODO: Execution time
+	sc.Log.Printf("Tickle task run (%s)", sc.Name)
 	defer func() {
-		log.Printf("Tickle task exit (%s)\n", sc.Name)
+		sc.Log.Printf("Tickle task exit (%s)", sc.Name)
 	}()
 
 	if sc.FuncTask == nil {
 		err := fmt.Errorf("Tickle func is nil")
-		log.Printf("Tickle task failed (%s)\n", sc.Name)
+		sc.Log.Printf("Tickle task failed (%s)", sc.Name)
 		terror.Echo(err)
 		sc.LastError = &err
 		sc.CountFail++
@@ -168,7 +185,7 @@ func (sc *Tickle) TaskRun() {
 
 	dat, err := sc.FuncTask()
 	if err != nil {
-		log.Printf("Tickle task failed (%s)\n", sc.Name)
+		sc.Log.Printf("Tickle task failed (%s)", sc.Name)
 		terror.Echo(err)
 		sc.LastError = &err
 		sc.CountFail++
@@ -208,6 +225,10 @@ func (sc *Tickle) SetIntervalAt(interval time.Duration, startHour, startMinute i
 
 // SetIntervalAtTimezone change the ticker interval and start at specified hour and minute of the day, with target timezone offset in minutes (Note: will auto stop and auto start after set)
 func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, startMinute int, loc *time.Location) error {
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
 	if !MinDurationOverride && interval.Seconds() < 10 {
 		return terror.New(fmt.Errorf("duration must be 10 seconds or above"), "")
 	}
@@ -231,7 +252,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 	st := now.UTC()
 
 	if startHour == -1 && startMinute == -1 {
-		fmt.Println("course 1")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 1")
+		}
 		// start next minute
 		st = st.Truncate(time.Minute)
 
@@ -241,7 +264,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		}
 
 	} else if startHour == -1 && startMinute > -1 {
-		fmt.Println("course 2")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 2")
+		}
 		// start beginning of next hour at matching minute
 		st = st.Truncate(time.Hour)
 		st = st.Add(time.Minute * time.Duration(startMinute))
@@ -252,7 +277,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		}
 
 	} else if startHour > -1 {
-		fmt.Println("course 3")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 3")
+		}
 		// start beginning of next matching hour at matching minute
 		// or if startMinute == -1, then minute at 0
 		if startMinute == -1 {
@@ -267,7 +294,9 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 		}
 
 	} else {
-		fmt.Println("course 5")
+		if sc.LogVerboseMode {
+			sc.Log.Printf("course 5")
+		}
 		// it shouldn't reach here
 		return terror.New(fmt.Errorf("unknown condition"), "")
 	}
@@ -277,7 +306,7 @@ func (sc *Tickle) SetIntervalAtTimezone(interval time.Duration, startHour, start
 	sc.intervalSecond = float64(interval.Seconds())
 	startInDuration := st.Sub(now)
 
-	log.Printf("Set tickle (%s). Starts at %s (interval %s)\n", sc.Name, startInDuration.String(), interval.String())
+	sc.Log.Printf("Set tickle (%s). Starts at %s (interval %s)", sc.Name, startInDuration.String(), interval.String())
 
 	a := time.AfterFunc(startInDuration, func() {
 		sc.TaskRun()
@@ -327,7 +356,11 @@ func (sc *Tickle) CounterReset() {
 
 // Stop will halt the tickle
 func (sc *Tickle) Stop() {
-	log.Println("Stop tickle")
+	// Ensure logger is initialised
+	if sc.Log == nil {
+		sc.Log = log.Default()
+	}
+	sc.Log.Printf("Stop tickle")
 
 	// reset the time info
 	sc.StartedAt = nil
@@ -357,6 +390,7 @@ func New(
 		FuncTask:        funcTask,
 		intervalSecond:  timeSecond,
 		StopMaxInterval: 2147483647, // ~68 years if triggered every second
+		Log:             log.Default(),
 	}
 
 	return tk
