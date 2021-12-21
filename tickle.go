@@ -57,7 +57,8 @@ type Tickle struct {
 	Log            Logger // Log to allow library users to override default logger
 	LogVerboseMode bool   // Print more details about tickle execution for debugging tickle
 
-	Tracer Tracer // Add tracing to see task evacuation times
+	Tracer          Tracer          // Add tracing to see task evacuation times
+	TracerPerentCtx context.Context // Used to intergrate with other tracing libraries like sentry
 }
 
 // Task uses user supplied function to run on interval
@@ -206,8 +207,8 @@ func (sc *Tickle) TaskRun() {
 		}
 	}()
 
-	sc.Tracer.OnTaskStart(context.TODO(), sc.Log, "tickle", sc.Name)
-	defer sc.Tracer.OnTaskStop(context.TODO(), sc.Log, sc.Name)
+	ctx := sc.Tracer.OnTaskStart(sc.TracerPerentCtx, sc.Log, "tickle", sc.Name)
+	defer sc.Tracer.OnTaskStop(ctx, sc.Log, sc.Name)
 
 	if sc.FuncTask == nil {
 		err := ErrNilTask
