@@ -1,6 +1,7 @@
 package tickle
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -55,6 +56,8 @@ type Tickle struct {
 
 	Log            Logger // Log to allow library users to override default logger
 	LogVerboseMode bool   // Print more details about tickle execution for debugging tickle
+
+	Tracer Tracer // Add tracing to see task evacuation times
 }
 
 // Task uses user supplied function to run on interval
@@ -66,6 +69,35 @@ type Clean func(interface{}, error)
 
 // Recovery uses user supplied function to run when panic occurred
 type Recovery func(error)
+
+type Tracer interface {
+	// OnTaskStart is called to start the tracer recording
+	OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context
+	// OnTaskStart is called to start the stop tracer recording and log the details
+	OnTaskStop(ctx context.Context, log Logger, taskName string)
+}
+
+type traceContextKey struct{}
+
+type defaultTracer struct {
+	startTime time.Time
+}
+
+func (t *defaultTracer) OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context {
+	t.startTime = time.Now()
+
+	log.Printf("tickle task start (%s)", taskName)
+	return ctx
+}
+
+func (t *defaultTracer) OnTaskStop(ctx context.Context, log Logger, taskName string) {
+	// end replaces uses of time.Now() to take into account the monotonic clock
+	// reading stored in start, such that duration = end - start is unaffected by
+	// changes in the system wall clock.
+	end := t.startTime.Add(time.Since(t.startTime))
+
+	log.Printf("tickle task end (%s): duration %s", taskName, end.Sub(t.startTime))
+}
 
 // Log uses user supplied function to log information
 type Logger interface {
@@ -126,6 +158,10 @@ func (sc *Tickle) TaskRun() {
 	if sc.Log == nil {
 		sc.Log = log.Default()
 	}
+	// Ensure tracer is initialised
+	if sc.Tracer == nil {
+		sc.Tracer = &defaultTracer{}
+	}
 
 	// remember
 	now := time.Now()
@@ -170,11 +206,8 @@ func (sc *Tickle) TaskRun() {
 		}
 	}()
 
-	// TODO: Execution time
-	sc.Log.Printf("Tickle task run (%s)", sc.Name)
-	defer func() {
-		sc.Log.Printf("Tickle task exit (%s)", sc.Name)
-	}()
+	sc.Tracer.OnTaskStart(context.TODO(), sc.Log, "tickle", sc.Name)
+	defer sc.Tracer.OnTaskStop(context.TODO(), sc.Log, sc.Name)
 
 	if sc.FuncTask == nil {
 		err := ErrNilTask
@@ -392,6 +425,7 @@ func New(
 		intervalSecond:  timeSecond,
 		StopMaxInterval: 2147483647, // ~68 years if triggered every second
 		Log:             log.Default(),
+		Tracer:          &defaultTracer{},
 	}
 
 	return tk
