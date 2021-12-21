@@ -163,6 +163,9 @@ func (sc *Tickle) TaskRun() {
 	if sc.Tracer == nil {
 		sc.Tracer = &defaultTracer{}
 	}
+	if sc.TracerPerentCtx == nil {
+		sc.TracerPerentCtx = context.Background()
+	}
 
 	// remember
 	now := time.Now()
