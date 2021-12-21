@@ -25,7 +25,7 @@ var (
 )
 
 // Tickle contain the information that the tickle inner settings
-type Tickle struct {
+type Tickle struct { // TODO: V2 Evaluate what NEEDS to be public and what can be passed in the config/options struct
 	Name string // name of the scheduled task
 
 	FuncTask     Task     // function to be executed on regular interval
@@ -57,13 +57,14 @@ type Tickle struct {
 	Log            Logger // Log to allow library users to override default logger
 	LogVerboseMode bool   // Print more details about tickle execution for debugging tickle
 
-	Tracer          Tracer          // Add tracing to see task evacuation times
-	TracerPerentCtx context.Context // Used to intergrate with other tracing libraries like sentry
+	Tracer Tracer // Add tracing to see task evacuation times
+	// Used to intergrate with other tracing libraries like sentry
+	TracerPerentCtx context.Context // TODO: V2 remove this and pass though as a parameter
 }
 
 // Task uses user supplied function to run on interval
 // It will returns the number of action/change/touch/created/update/delete performed and error status
-type Task func() (int, error)
+type Task func() (int, error) // TODO: V2 accept a context.Context for the tracer to continue in lower layers, I.E. database
 
 // Clean uses user supplied function to run clean from error
 type Clean func(interface{}, error)
@@ -78,15 +79,12 @@ type Tracer interface {
 	OnTaskStop(ctx context.Context, log Logger, taskName string)
 }
 
-type traceContextKey struct{}
-
 type defaultTracer struct {
 	startTime time.Time
 }
 
 func (t *defaultTracer) OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context {
 	t.startTime = time.Now()
-
 	log.Printf("tickle task start (%s)", taskName)
 	return ctx
 }
@@ -137,7 +135,7 @@ func (sc *Tickle) Start() {
 }
 
 // TaskRun execute the function (task) it been assigned to
-func (sc *Tickle) TaskRun() {
+func (sc *Tickle) TaskRun() { // TODO: V2 accept a context.Context for the tracer
 	// sanity check
 	// too early
 	if !sc.TimeRangeOpen.IsZero() && time.Now().Before(sc.TimeRangeOpen) {
@@ -412,6 +410,7 @@ func New(
 	taskName string, // name of the task to identify, please make it unique
 	timeSecond float64, // interval in seconds
 	funcTask Task, //  function for task to execute
+	// TODO: V2 use a config struct
 ) *Tickle {
 	if !MinDurationOverride && timeSecond < 10 {
 		panic("cannot be less than 10 seconds for interval")
