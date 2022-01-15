@@ -54,6 +54,7 @@ type Tickle struct { // TODO: V2 Evaluate what NEEDS to be public and what can b
 	ticker         *time.Ticker // internal ticker
 	timerTicker    *time.Timer  // timer that starts the ticker above
 
+	DisableLogging bool // disable standard logging
 	Log            Logger // Log to allow library users to override default logger
 	LogVerboseMode bool   // Print more details about tickle execution for debugging tickle
 
@@ -74,28 +75,31 @@ type Recovery func(error)
 
 type Tracer interface {
 	// OnTaskStart is called to start the tracer recording
-	OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context
+	OnTaskStart(ctx context.Context, log Logger, operation string, taskName string, disableLogging bool) context.Context
 	// OnTaskStart is called to start the stop tracer recording and log the details
-	OnTaskStop(ctx context.Context, log Logger, taskName string)
+	OnTaskStop(ctx context.Context, log Logger, taskName string, disableLogging bool)
 }
 
 type defaultTracer struct {
 	startTime time.Time
 }
 
-func (t *defaultTracer) OnTaskStart(ctx context.Context, log Logger, operation string, taskName string) context.Context {
+func (t *defaultTracer) OnTaskStart(ctx context.Context, log Logger, operation string, taskName string, disableLogging bool) context.Context {
 	t.startTime = time.Now()
-	log.Printf("tickle task start (%s)", taskName)
+	if !disableLogging {
+			log.Printf("tickle task start (%s)", taskName)
+	}
 	return ctx
 }
 
-func (t *defaultTracer) OnTaskStop(ctx context.Context, log Logger, taskName string) {
+func (t *defaultTracer) OnTaskStop(ctx context.Context, log Logger, taskName string, disableLogging bool) {
 	// end replaces uses of time.Now() to take into account the monotonic clock
 	// reading stored in start, such that duration = end - start is unaffected by
 	// changes in the system wall clock.
 	end := t.startTime.Add(time.Since(t.startTime))
-
+	if !disableLogging {
 	log.Printf("tickle task end (%s): duration %s", taskName, end.Sub(t.startTime))
+	}
 }
 
 // Log uses user supplied function to log information
@@ -208,8 +212,8 @@ func (sc *Tickle) TaskRun() { // TODO: V2 accept a context.Context for the trace
 		}
 	}()
 
-	ctx := sc.Tracer.OnTaskStart(sc.TracerPerentCtx, sc.Log, "tickle", sc.Name)
-	defer sc.Tracer.OnTaskStop(ctx, sc.Log, sc.Name)
+	ctx := sc.Tracer.OnTaskStart(sc.TracerPerentCtx, sc.Log, "tickle", sc.Name, sc.DisableLogging)
+	defer sc.Tracer.OnTaskStop(ctx, sc.Log, sc.Name, sc.DisableLogging)
 
 	if sc.FuncTask == nil {
 		err := ErrNilTask

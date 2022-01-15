@@ -92,10 +92,8 @@ github.com/nats-io/jwt v0.3.0/go.mod h1:fRYCDE99xlTsqUzISS1Bi75UBJ6ljOJQOAAu5Vgl
 github.com/nats-io/nats.go v1.9.1/go.mod h1:ZjDU1L/7fJ09jvUSRVBR2e7+RnLiiIQyqyzEE/Zbp4w=
 github.com/nats-io/nkeys v0.1.0/go.mod h1:xpnFELMwJABBLVhffcfd1MZx6VsNRFpEugbxziKVo7w=
 github.com/nats-io/nuid v1.0.1/go.mod h1:19wcPz3Ph3q0Jbyiqsd0kePYG7A95tJPxeL+1OSON2c=
-github.com/ninja-software/terror v0.0.7 h1:X+Jhwg3EbDZWRyyJHX4q8lKdHbjyB/PoGMvwH3DHsPs=
-github.com/ninja-software/terror v0.0.7/go.mod h1:c15jMBaURuYL18p5SoVhkGC6dadoV6Zov5ePwAs6Fkk=
-github.com/ninja-software/tickle v1.2.1 h1:/ThiG7AZYWT2C0pil2UXkJeybRuVpqGx24HJJyrRPzQ=
-github.com/ninja-software/tickle v1.2.1/go.mod h1:tlgocU5c6972I4JOD/SII9/NbyT8D0UV62Ab48nkBmM=
+github.com/ninja-software/tickle v1.3.0 h1:npMJZH2L1FSXnHhhJZ0SokgsNkT5WA2RJjtbluYR0yI=
+github.com/ninja-software/tickle v1.3.0/go.mod h1:kQimeRvKZb825ULSdc1XWos1ssxN7fx6q8htjkGvthE=
 github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/ginkgo v1.10.3/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/gomega v1.7.1/go.mod h1:XdKZgCCFLUoM/7CFJVPcG8C1xQ1AJ0vpAezJrB7JYyY=
